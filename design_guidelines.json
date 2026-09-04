@@ -1,0 +1,152 @@
+{
+  "project_name": "FII Flow Tracker India",
+  "app_type": "dashboard",
+  "theme": "dark",
+  "design_archetype": "The Performance Pro + Swiss High-Contrast Financial Analytics",
+  "target_audience": "Indian stock market investors, equity researchers, quant analysts, and traders tracking foreign institutional liquidity",
+  "emotional_tone": "Institutional rigor, high data density, authoritative, transparent, real-time command center",
+  "typography": {
+    "font_family_headings": "Outfit, sans-serif",
+    "font_family_body": "Inter, system-ui, sans-serif",
+    "font_family_mono": "JetBrains Mono, Roboto Mono, monospace",
+    "font_weights": {
+      "light": 300,
+      "regular": 400,
+      "medium": 500,
+      "semibold": 600,
+      "bold": 700,
+      "black": 900
+    },
+    "hierarchy": {
+      "h1_dashboard_title": "text-2xl sm:text-3xl font-bold tracking-tight text-slate-50",
+      "h2_section_heading": "text-lg sm:text-xl font-semibold tracking-tight text-slate-100",
+      "h3_card_heading": "text-sm sm:text-base font-medium tracking-tight text-slate-200",
+      "metric_large": "text-2xl sm:text-3xl font-bold font-mono tracking-tight",
+      "metric_medium": "text-lg sm:text-xl font-semibold font-mono tracking-tight",
+      "body_text": "text-sm text-slate-300 leading-relaxed",
+      "label_overline": "text-xs font-semibold tracking-widest uppercase text-slate-400",
+      "badge_text": "text-xs font-mono font-medium"
+    }
+  },
+  "colors": {
+    "background_void": "#07090E",
+    "background_shell": "#0F131C",
+    "card_surface": "#161B26",
+    "card_surface_hover": "#1E2535",
+    "border_subtle": "#232B3E",
+    "border_highlight": "#334155",
+    "text_primary": "#F8FAFC",
+    "text_secondary": "#94A3B8",
+    "text_muted": "#64748B",
+    "fii_buy_positive": {
+      "hex": "#10B981",
+      "bg_tint": "rgba(16, 185, 129, 0.10)",
+      "border": "rgba(16, 185, 129, 0.25)",
+      "glow": "0 0 16px rgba(16, 185, 129, 0.20)"
+    },
+    "fii_sell_negative": {
+      "hex": "#EF4444",
+      "bg_tint": "rgba(239, 68, 68, 0.10)",
+      "border": "rgba(239, 68, 68, 0.25)",
+      "glow": "0 0 16px rgba(239, 68, 68, 0.20)"
+    },
+    "dii_flow_cyan": {
+      "hex": "#06B6D4",
+      "bg_tint": "rgba(6, 182, 212, 0.10)"
+    },
+    "accent_primary": {
+      "hex": "#3B82F6",
+      "bg_tint": "rgba(59, 130, 246, 0.12)"
+    },
+    "vix_warning_amber": "#F59E0B",
+    "data_quality_verified": "#10B981",
+    "data_quality_estimated": "#F59E0B"
+  },
+  "provenance_chip_system": {
+    "mandatory_fields": [
+      "Data Source (e.g. NSDL, NSE, BSE)",
+      "Data Date (e.g. 12 Jul 2026)",
+      "Last Updated Timestamp (e.g. 18:30 IST)",
+      "Data Frequency (Daily / Fortnightly EOD)",
+      "Quality Badge (Verified / Estimated / EOD Direct)"
+    ],
+    "visual_style": "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono bg-slate-900/80 border border-slate-800 text-slate-400"
+  },
+  "grid_and_spacing": {
+    "layout_type": "Mode B: High Density Financial Dashboard",
+    "container_max_width": "max-w-[1600px] mx-auto p-4 md:p-6 lg:p-8 space-y-6",
+    "gap_scale": "gap-4 md:gap-6",
+    "card_padding": "p-4 md:p-5",
+    "border_radius": "rounded-lg"
+  },
+  "key_modules_hierarchy": [
+    {
+      "module_id": "top_indices_and_flow_bar",
+      "title": "Real-time EOD Market Indices & Net Liquidity Summary",
+      "description": "Displays NIFTY 50, NIFTY 500, NIFTY Bank, India VIX, FII Net Today, DII Net Today with percentage changes and persistence badges.",
+      "components": ["IndicesSummaryCard", "LiquidityPulseGauge", "ProvenanceChip"]
+    },
+    {
+      "module_id": "sector_flow_tracker",
+      "title": "Sector-wise FPI Flows (NSDL Fortnightly) [TOP PRIORITY]",
+      "description": "Ranked horizontal bar chart of sector inflows/outflows, 24-sector heatmap matrix, sector AUM weight vs flow trend, and sector momentum filters.",
+      "components": ["SectorFlowBarChart", "SectorHeatmapGrid", "SectorAumTrendChart", "SectorFilterTabs"]
+    },
+    {
+      "module_id": "daily_fii_dii_flow_timeseries",
+      "title": "Daily FII/DII Net Flow & Cumulative Liquidity Trend",
+      "description": "Interactive time-series (Buy/Sell/Net) with cumulative flow overlay, range toggles (5D, 20D, 60D, 1Y, YTD), and streak callouts.",
+      "components": ["FlowTimeSeriesChart", "CumulativeOverlayToggle", "TimeRangeSelector"]
+    },
+    {
+      "module_id": "flow_persistence_strength",
+      "title": "Flow Persistence & Strength Score Radar",
+      "description": "Calculates rolling 5D/20D sums, consecutive buy/sell streak counters, Z-score flow velocity, and institutional absorption meters.",
+      "components": ["PersistenceMetricCards", "ZScoreGauge", "StreakCounterBadge"]
+    },
+    {
+      "module_id": "flow_vs_market_return",
+      "title": "FII Flow vs Market Return Comparison & Correlation Matrix",
+      "description": "Dual-axis time series and scatter correlation plot comparing FII Net Flows against NIFTY 50/500 returns, including Pearson R correlation coefficient.",
+      "components": ["DualAxisChart", "ScatterCorrelationPlot", "CorrelationStatBadge"]
+    },
+    {
+      "module_id": "methodology_disclaimer_export",
+      "title": "Data Provenance, Methodology, Disclaimer & CSV Export",
+      "description": "Complete breakdown of NSDL/NSE data lag, calculations (Z-score, Rolling Sums), non-recommendation disclaimers, and 1-click CSV export.",
+      "components": ["MethodologyAccordion", "DisclaimerBanner", "ExportCsvButton"]
+    }
+  ],
+  "visual_enhancers": {
+    "surface_style": "Dark obsidian glassmorphic card with subtle 1px border (#232B3E) and soft hover glow",
+    "chart_tooltips": "Dark custom tooltip with monospaced numbers, precise currency formatting (₹ Cr), and data freshness tags",
+    "animations": "Subtle Framer Motion entrance fades (duration 0.2s), tab transitions, smooth hover scale on cards"
+  },
+  "testing_attributes": {
+    "convention": "data-testid='[element-role]-[description]'",
+    "mandatory_examples": [
+      "data-testid='dashboard-header'",
+      "data-testid='provenance-chip-nifty50'",
+      "data-testid='sector-flow-tab-heatmap'",
+      "data-testid='sector-flow-tab-bar'",
+      "data-testid='sector-card-financial-services'",
+      "data-testid='fii-dii-time-range-20d'",
+      "data-testid='export-csv-button'",
+      "data-testid='methodology-dialog-trigger'",
+      "data-testid='disclaimer-banner'"
+    ]
+  },
+  "media_assets": {
+    "textures": [
+      "https://images.unsplash.com/photo-1759210479316-7b6ea0fc7856?crop=entropy&cs=srgb&fm=jpg&q=85"
+    ]
+  },
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Strictly follow dark mode guidelines with crisp slate borders (#232B3E) and rich dark surfaces (#0F131C, #161B26).",
+    "DO NOT hardcode fake stock advice or claims that FII buying predicts guaranteed stock price gains. Include disclaimers prominently.",
+    "Place a Data Provenance Chip on EVERY visual card showing: Source, Data Date, Last Updated, Frequency, and Quality Indicator.",
+    "Ensure Sector Flow is highlighted as the primary view with top priority in layout.",
+    "Use JetBrains Mono or monospace font for all financial figures, percentages, ₹ Cr values, and timestamps.",
+    "All buttons, inputs, tabs, export options, and chart controls MUST have data-testid attributes for automated verification."
+  ]
+}

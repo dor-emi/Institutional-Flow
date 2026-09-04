@@ -1,0 +1,42 @@
+{
+  "summary": "Full e2e test of FII Flow Tracker India. Backend: created /app/backend/tests/backend_test.py with 27 pytest cases covering /api/sources, /api/flows/daily (all ranges), /api/flows/stats, /api/indices, /api/compare (4 indices x 5 ranges + invalid-index 400), /api/sectors (12 fortnights x 23 sectors), both CSV exports and /api/refresh — 27/27 passed serially. Frontend: Playwright verified dashboard load, all 7 panels, 4 index tiles with live numeric values, liquidity pulse stats, sector panel (ranked/heatmap/trend tabs, 4 metric windows, intensity toggle, 23 heatmap rows x 12 fortnight columns), daily flow chart (3 views, 5 time ranges each triggering a refetch and re-render), compare panel (4 index switches, scatter mode with 243 points, 3 correlation badges), 8 provenance chips all carrying source+data date+fetch time+quality badge, methodology dialog, refresh-all toast, 4 source health dots, mobile 390px layout with no horizontal overflow, and CSV download returning real text/csv. Zero console/page errors. No functional defects found; only cosmetic issues listed below.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/refresh", "issue": "Refresh sets meta.last_fetch=None before re-fetching, so for a few seconds /api/sources reports status 'refreshing' and every provenance.last_updated is null. UI degrades gracefully (chip shows 'fetching…'), but any consumer asserting last_updated non-null will intermittently fail. Consider keeping the previous last_fetch until the new fetch succeeds."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Sector flows — Ranked bar chart", "issues": ["Long sector names on the Y axis wrap to two lines and visually collide with the adjacent tick label (e.g. 'Media, Entertainment & Publication', 'Automobile and Auto Components', 'Fast Moving Consumer Goods', 'Oil, Gas & Consumable Fuels') because row height is only ~22px. Increase per-row height or widen/truncate the axis labels."]},
+      {"screen": "Flows vs market returns — scatter mode", "issues": ["X-axis label 'FPI net flow (₹ Cr)' overlaps the axis tick values at the bottom of the chart (insideBottom offset too small)."]},
+      {"screen": "Market context — index tiles (mobile 390px)", "issues": ["The change % next to the index value is clipped at the tile's right edge on mobile (NIFTY 50 shows '+0.1…', NIFTY BANK shows '-0.0…', NIFTY 500 '0.00' cut). Needs wrapping or smaller type at <420px."]},
+      {"screen": "Global number formatting", "issues": ["fmtCr adds a '+' sign to unsigned quantities: 'equity AUC +₹70,38,301 Cr', tooltip 'Equity AUC +₹2,81,693 Cr', and 'buy +₹13,858 Cr · sell +₹16,970 Cr'. AUC and gross buy/sell are not directional, so the leading '+' is misleading."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Cosmetic: fix sector ranked-bar Y-axis label overlap (increase row height in RankedBars, SectorFlow.jsx line 23).",
+    "Cosmetic: fix scatter X-axis label overlapping ticks in CompareChart.jsx line 58.",
+    "Cosmetic: prevent change-% clipping on index tiles at mobile widths (IndicesStrip.jsx line 31-34).",
+    "Cosmetic: do not render a '+' sign for AUC / gross buy / gross sell values (lib/format fmtCr usage).",
+    "Optional: preserve previous last_fetch during POST /api/refresh so provenance.last_updated never goes null."
+  ],
+  "critical_code_review_comments": [
+    "server.py flows_daily/export_daily shadow the builtin `range` with a query param; they currently don't call range() so it works, but /api/compare already hit this bug once. Rename to `rng` with alias='range' everywhere for consistency and to prevent regressions.",
+    "server.py /api/export/sectors.csv calls the `sectors()` route handler directly as a function; extract shared logic into a service function instead of invoking the endpoint, so response-model/dependency changes cannot break the export.",
+    "server.py uses deprecated @app.on_event('startup'/'shutdown'); migrate to a lifespan context manager (FastAPI >=0.109 deprecation).",
+    "server.py touch() fires asyncio.create_task without holding a reference; tasks can be garbage-collected mid-flight. Keep a module-level set of pending tasks.",
+    "_daily_series() uses .to_list(2000) with a hard cap — at ~250 trading days/yr this silently truncates beyond ~8 years of history. Prefer no limit or an explicit constant tied to RANGES."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (27/27)", "frontend": "100% functional (0 broken flows); 4 cosmetic issues"},
+  "seed_data_creation": "None — all data is live-scraped from NSDL/NSE/Yahoo and cached in Mongo. No test data written.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "None required — public dashboard, no auth (confirmed in /app/memory/test_credentials.md).",
+  "context_for_next_testing_agent": "Backend suite is at /app/backend/tests/backend_test.py (27 tests, all passing). IMPORTANT: pytest.ini enables xdist parallel execution, which makes TestRefresh run concurrently with TestSources/TestFlowsStats — the refresh clears meta.last_fetch and those two tests then fail spuriously. Run serially with `python -m pytest tests/backend_test.py -o addopts=\"\" -p no:xdist` or wait ~25s and re-run. Live data as of test run: latest confirmed NSDL date 2026-09-04, latest sector fortnight 16-31 Aug 2026, 23 sectors (Sovereign filtered out in UI), 263 daily NSDL rows, 23 NSE provisional rows, 1981 index price rows. All 4 sources status=ok. Frontend has complete data-testid coverage; no missing testids were needed.",
+  "rca_of_the_issue": "No functional defect reproduced. The two initial pytest failures (nsdl_daily status='refreshing', provenance.fii.last_updated=None) were a test-harness artifact: pytest-xdist ran TestRefresh in parallel, and POST /api/refresh intentionally nulls meta.last_fetch before re-fetching. Re-running serially gave 27/27 passes. The previously reported /api/compare 500 (shadowed builtin `range`) is confirmed fixed — all 4 indices x 5 ranges return 200."
+}
