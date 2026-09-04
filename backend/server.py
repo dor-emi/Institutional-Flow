@@ -14,7 +14,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.middleware.cors import CORSMiddleware
 
 from services import store, analytics
-from services.market import INDICES
+from services.market import INDICES, SECTOR_INDEX_MAP
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -52,6 +52,24 @@ SOURCES = {
         "url": "https://finance.yahoo.com/quote/%5ENSEI/",
         "frequency": "Daily EOD",
         "quality": "verified", "quality_note": "Exchange EOD closes redistributed by Yahoo Finance.",
+    },
+    "sector_indices": {
+        "id": "sector_indices", "name": "NSE — Sectoral index historical data",
+        "url": "https://www.nseindia.com/reports-indices-historical-index-data",
+        "frequency": "Daily EOD",
+        "quality": "partial", "quality_note": "NSDL uses BSE industry sectors; 11 map exactly to NSE sectoral indices, 5 approximately (Consumer Services, Services, Power, Construction, Capital Goods), 6 have no index.",
+    },
+    "deals": {
+        "id": "deals", "name": "NSE — Bulk & Block Deals (FPI counterparties, name-based)",
+        "url": "https://www.nseindia.com/market-data/large-deals",
+        "frequency": "Daily EOD",
+        "quality": "partial", "quality_note": "Only deals ≥0.5% of equity (bulk) or negotiated block deals are disclosed. FPI identification is a name heuristic. This is NOT total FII buying/selling per stock.",
+    },
+    "holdings": {
+        "id": "holdings", "name": "Screener.in — quarterly shareholding pattern (FIIs %), NIFTY 100",
+        "url": "https://www.screener.in/",
+        "frequency": "Quarterly (exchange filings, ~3-6 weeks after quarter end)",
+        "quality": "verified", "quality_note": "Aggregated from BSE/NSE shareholding filings; universe limited to NIFTY 100 (NSE constituents list).",
     },
 }
 
@@ -94,7 +112,7 @@ async def sources():
     out = []
     for k in SOURCES:
         m = await store.get_meta(db, k)
-        out.append({**SOURCES[k], **{kk: m.get(kk) for kk in ("last_fetch", "status", "error", "records", "started_at")}})
+        out.append({**SOURCES[k], **{kk: m.get(kk) for kk in ("last_fetch", "status", "error", "records", "started_at", "progress")}})
     return {"sources": out, "server_time": datetime.now(timezone.utc).isoformat()}
 
 
@@ -290,6 +308,133 @@ async def sectors(periods: int = Query(12, ge=2, le=30)):
         "latest": {"start": docs[-1]["start"], "end": docs[-1]["end"], "total_net_equity": gt.get("net_equity"), "total_auc_equity": gt.get("auc_equity"), "source_url": docs[-1].get("source_url")},
         "sectors": out,
         "provenance": await provenance("nsdl_sectors", docs[-1]["end"]),
+    }
+
+
+@api.get("/sectors/rotation")
+async def sector_rotation(periods: int = Query(8, ge=2, le=24)):
+    touch("nsdl_sectors", "sector_indices")
+    docs = await db.sector_fortnights.find({}, {"_id": 0}).sort("_id", -1).to_list(periods)
+    docs.reverse()
+    keys = sorted({v["key"] for v in SECTOR_INDEX_MAP.values()})
+    price_docs = await db.index_prices.find({"_id": {"$in": keys}}, {"_id": 0}).to_list(50)
+    closes = {p["key"]: [(x["date"], x["close"]) for x in p["series"]] for p in price_docs}
+
+    def close_on_or_before(key, d):
+        best = None
+        for dt, c in closes.get(key, []):
+            if dt <= d:
+                best = c
+            else:
+                break
+        return best
+
+    fortnights = []
+    for doc in docs:
+        start, end = doc["start"], doc["end"]
+        before = (date.fromisoformat(start) - timedelta(days=1)).isoformat()
+        rows = []
+        for name, s in doc["sectors"].items():
+            if name in ("Grand Total", "Total", "Sovereign", "Others"):
+                continue
+            m = SECTOR_INDEX_MAP.get(name)
+            net = s.get("net_equity")
+            base = s.get("auc_equity_start") or s.get("auc_equity")
+            intensity = round(net / base * 100, 3) if net is not None and base else None
+            ret = None
+            if m:
+                c0, c1 = close_on_or_before(m["key"], before), close_on_or_before(m["key"], end)
+                ret = round((c1 / c0 - 1) * 100, 2) if c0 and c1 else None
+            rows.append({"sector": name, "net_equity": net, "flow_intensity_pct": intensity, "index_return_pct": ret,
+                         "index_name": m["name"] if m else None, "match": m["match"] if m else None, "auc_equity": s.get("auc_equity")})
+        fortnights.append({"start": start, "end": end, "rows": rows})
+    dates = [c[-1][0] for c in closes.values() if c]
+    return {
+        "fortnights": fortnights,
+        "mapping": {k: {"index": v["name"], "match": v["match"]} for k, v in SECTOR_INDEX_MAP.items()},
+        "provenance": {"flows": await provenance("nsdl_sectors", docs[-1]["end"] if docs else None), "index": await provenance("sector_indices", max(dates) if dates else None)},
+    }
+
+
+@api.get("/holdings")
+async def holdings_view():
+    touch("holdings")
+    docs = await db.holdings.find({}, {"_id": 0}).to_list(500)
+    meta = await store.get_meta(db, "holdings")
+    out = []
+    for d in docs:
+        fii = d.get("fii") or []
+        q = d.get("quarters") or []
+        if len(fii) < 2 or fii[-1] is None:
+            continue
+        prev = fii[-2]
+        yoy = fii[-5] if len(fii) >= 5 else None
+        out.append({
+            "symbol": d["symbol"], "name": d["name"], "industry": d.get("industry"),
+            "latest_quarter": q[-1] if q else None, "prev_quarter": q[-2] if len(q) > 1 else None,
+            "fii_pct": fii[-1], "fii_prev_pct": prev,
+            "change_qoq_pp": round(fii[-1] - prev, 2) if prev is not None else None,
+            "change_yoy_pp": round(fii[-1] - yoy, 2) if yoy is not None else None,
+            "consecutive_quarters": _consecutive(fii),
+            "dii_pct": (d.get("dii") or [None])[-1], "promoter_pct": (d.get("promoters") or [None])[-1],
+            "quarters": q[-8:], "fii_series": fii[-8:], "source_url": d.get("source_url"),
+        })
+    out.sort(key=lambda x: -(x["change_qoq_pp"] or 0))
+    labels = [x["latest_quarter"] for x in out if x["latest_quarter"]]
+    latest_q = max(set(labels), key=labels.count) if labels else None
+    latest_end = None
+    if latest_q:
+        try:
+            d0 = datetime.strptime(latest_q, "%b %Y").date()
+            latest_end = date(d0.year + (d0.month == 12), (d0.month % 12) + 1, 1) - timedelta(days=1)
+        except ValueError:
+            pass
+    return {
+        "universe": "NIFTY 100", "count": len(out), "latest_quarter": latest_q, "quarter_end": latest_end.isoformat() if latest_end else None, "progress": meta.get("progress"), "status": meta.get("status"),
+        "stocks": out,
+        "provenance": await provenance("holdings", latest_end.isoformat() if latest_end else None),
+    }
+
+
+def _consecutive(vals):
+    vals = [v for v in vals if v is not None]
+    if len(vals) < 2:
+        return 0
+    diffs = [vals[i] - vals[i - 1] for i in range(1, len(vals))]
+    sign = diffs[-1] > 0
+    n = 0
+    for d in reversed(diffs):
+        if d == 0 or (d > 0) != sign:
+            break
+        n += 1
+    return n if sign else -n
+
+
+@api.get("/deals/fpi")
+async def fpi_deals(days: int = Query(10, ge=1, le=30)):
+    touch("deals")
+    dates = await db.large_deals.distinct("date")
+    dates = sorted(dates)[-days:]
+    rows = await db.large_deals.find({"date": {"$in": dates}, "likely_fpi": True, "value_cr": {"$gte": 1}, "symbol": {"$not": {"$regex": "-(RE|BE|BZ)$"}}}, {"_id": 0}).sort([("date", -1), ("value_cr", -1)]).to_list(5000)
+    total = await db.large_deals.count_documents({"date": {"$in": dates}})
+    by_day = {}
+    for r in rows:
+        day = by_day.setdefault(r["date"], {"date": r["date"], "buys": {}, "sells": {}})
+        bucket = day["buys"] if r["side"] == "BUY" else day["sells"]
+        agg = bucket.setdefault(r["symbol"], {"symbol": r["symbol"], "name": r["name"], "value_cr": 0.0, "qty": 0, "clients": [], "kinds": set()})
+        agg["value_cr"] = round(agg["value_cr"] + (r["value_cr"] or 0), 2)
+        agg["qty"] += r["qty"] or 0
+        if r["client"] not in agg["clients"]:
+            agg["clients"].append(r["client"])
+        agg["kinds"].add(r["kind"])
+    out = []
+    for d in sorted(by_day, reverse=True):
+        day = by_day[d]
+        fmt = lambda b: sorted([{**v, "kinds": sorted(v["kinds"])} for v in b.values()], key=lambda x: -x["value_cr"])
+        out.append({"date": d, "top_buys": fmt(day["buys"])[:5], "top_sells": fmt(day["sells"])[:5], "buy_count": len(day["buys"]), "sell_count": len(day["sells"])})
+    return {
+        "days": out, "dates_covered": dates, "fpi_deal_rows": len(rows), "all_deal_rows": total,
+        "provenance": await provenance("deals", dates[-1] if dates else None),
     }
 
 

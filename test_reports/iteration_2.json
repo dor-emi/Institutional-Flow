@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 2 focused on the 4 new features (Sector Rotation Map, Flow Alerts, quarterly FII holdings, daily FPI bulk/block deals) plus a regression smoke of the base dashboard. Backend: extended /app/backend/tests/backend_test.py from 27 to 41 pytest cases (new classes TestSectorRotation 6, TestHoldings 4, TestFpiDeals 4; updated TestSources for 7 sources incl. sector_indices/deals/holdings all status=ok; moved TestRefresh to end of file so its meta reset no longer pollutes provenance assertions) — 41/41 passed serially. Validated: /api/sectors/rotation?periods=8 → 8 chronological fortnights x 22 rows, numeric index_return_pct for exact/approx mapped sectors (IT -0.53%, Financial Services +0.31%), null for unmapped (Textiles), mapping of 16 sectors with correct exact/approx split, provenance.index id=sector_indices quality=partial status=ok; /api/holdings → NIFTY 100, count=100, latest_quarter 'Jun 2026', sorted by change_qoq_pp desc (+9.60 → -3.61), per-stock schema incl. <=8 quarters/fii_series, screener.in source_url, no _id leakage; /api/deals/fpi?days=10 → 10 days newest-first, top_buys/top_sells <=5 sorted by value_cr, clients/kinds populated, fpi_deal_rows 130 <= all_deal_rows 1007, quality=partial. Param validation (422) verified for rotation periods and deals days. Frontend (Playwright, desktop 1920 + mobile 390): all 7 panels render; rotation tab shows scatter (48 symbols + labels), 16-row rotation-table with 5 'approx' chips and 'Read' quadrant text, 6 rotation-fn buttons switch fortnight (table content changes), all 3 trail toggles work, both rotation provenance chips present; holdings panel shows quarter/breadth/avg stats, 10+10 rows with sparklines, YoY metric toggle re-ranks tables and relabels breadth (34/64), search 'HDFC' returns HDFCAMC/HDFCBANK/HDFCLIFE, provenance chip present; deals panel shows partial-coverage warning, 7 day buttons, day switch changes buy/sell lists, provenance chip with 'Partial' badge; alerts: defaults d1+d2 with '2 alert rules watching' banner, added streak_selling >= 1 rule → 'triggered' chip in dialog, alerts-banner with alert-hit text 'Consecutive FPI net-selling days is 2 d (rule: >= 1 d)', header 'Alerts (1)', persisted in localStorage fii-flow-alerts-v1 across reload, deletion returns banner to none. Zero console/page errors, no stuck placeholders. No functional defects found; only cosmetic/presentation issues below.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/holdings", "issue": "latest_quarter is computed as max() over month-name strings ('Jun 2026', 'Jul 2026'), i.e. a lexicographic compare of 'Mon YYYY' labels. It is correct only by accident here; e.g. 'Sep 2025' would beat 'Dec 2025' and 'Dec 2025' would beat 'Jun 2026'. Parse to a date before taking max."},
+      {"endpoint": "/api/holdings", "issue": "provenance.data_date carries a quarter label ('Jun 2026'), which the UI renders through fmtDate as '01 Jun 2026' — implies 1 June instead of quarter ended 30 Jun 2026. Either send an ISO quarter-end date or make the chip quarter-aware."},
+      {"endpoint": "/api/deals/fpi", "issue": "No minimum deal-value filter: trivial rows leak into top_sells (e.g. RCDL-RE ₹0.04 Cr, an -RE rights entitlement line) and displace real FPI deals when a day is thin. Consider a small value_cr floor or excluding -RE/-BE series."},
+      {"endpoint": "/api/sources, /api/sectors/rotation", "issue": "Known from iteration 1 and reconfirmed: POST /api/refresh clears meta.last_fetch/status, so for a few seconds status='refreshing' and provenance.last_updated is null (caused two spurious failures before test reordering)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Sector flows — Rotation map scatter (desktop 1920 and mobile 390)", "issues": ["Dot labels collide in the dense cluster near the origin — 'Metals', 'FMCG', 'Media', 'Cement', 'Fin Svcs', 'Realty', 'Healthcare', 'Chemicals' overlap each other and the trail lines, making several unreadable. Most sectors sit within ±1% flow/AUC while one or two outliers stretch the axis; consider a symlog/clamped Y domain, label collision avoidance, or labelling only the top/bottom N."]},
+      {"screen": "Quarterly FII holdings (mobile 390px)", "issues": ["The holdings tables overflow the viewport by ~24px and create a page-level horizontal scrollbar (the w-20 sparkline cell in the last column extends to x=467 on a 390px screen); the inner overflow-x-auto does not contain it. Hide the 8Q sparkline / Run columns below sm, or wrap the table in a min-w-0 container."]},
+      {"screen": "Rotation table (mobile 390px)", "issues": ["Cells wrap awkwardly (e.g. '₹13,010 Cr' and index names break across 2-3 lines) instead of horizontally scrolling; add min-width to the table so overflow-x-auto engages."]},
+      {"screen": "Provenance chip — holdings", "issues": ["Data-date chip reads '01 Jun 2026' for the Jun-2026 quarter (see backend minor issue) — misleading precision for quarterly data."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Cosmetic: de-clutter rotation scatter labels (collision avoidance or label only outliers/latest top-N).",
+    "Cosmetic: fix ~24px mobile horizontal overflow caused by holdings table sparkline column at 390px.",
+    "Cosmetic: give the rotation table a min-width on mobile so it scrolls instead of wrapping.",
+    "Data presentation: send an ISO quarter-end date (or a quarter-aware chip) for /api/holdings provenance instead of 'Jun 2026' rendered as '01 Jun 2026'.",
+    "Robustness: parse quarter labels to dates before max() when deriving holdings.latest_quarter.",
+    "Optional: apply a small value_cr floor / exclude -RE, -BE series in /api/deals/fpi so ₹0.04 Cr rows do not occupy top-5 slots."
+  ],
+  "critical_code_review_comments": [
+    "server.py holdings_view(): latest_quarter = max() over 'Mon YYYY' strings is a lexicographic compare of month names — replace with a parsed-date key. Two different labels ('Jun 2026' and 'Jul 2026') already coexist in the data, so this path is live.",
+    "market.py SECTOR_INDEX_MAP maps both 'Construction' and 'Capital Goods' to the same SEC_INFRA key, so the rotation map shows an identical index_return_pct (-2.54%) for two different sectors. It is labelled 'approx', but consider NIFTY INDIA MANUFACTURING / CPSE for Capital Goods to avoid duplicated x-values.",
+    "server.py fpi_deals() uses `fmt = lambda b: ...` inside the loop; make it a module-level helper for readability and to avoid re-creating the closure per day.",
+    "server.py fpi_deals() calls large_deals.distinct('date') on every request; as the collection grows this becomes a full scan — index on `date` or store a rolling meta list.",
+    "Still open from iteration 1: deprecated @app.on_event startup/shutdown, touch() creating un-referenced asyncio tasks (GC risk), /api/export/sectors.csv invoking the sectors() route handler directly, and _daily_series() hard .to_list(2000) cap.",
+    "eslint: HoldingsPanel.jsx:78 unescaped apostrophe (react/no-unescaped-entities) and App.js:20 unused eslint-disable directive."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (41/41)", "frontend": "100% functional (0 broken flows); 4 cosmetic issues"},
+  "seed_data_creation": "None — all data is live-scraped (NSDL/NSE/Screener.in/Yahoo) and cached in Mongo. Only transient localStorage alert rules were created and then deleted.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "None required — public dashboard, no auth.",
+  "context_for_next_testing_agent": "Suite is /app/backend/tests/backend_test.py, 41 tests. Run serially: `cd /app/backend && python -m pytest tests/backend_test.py -o addopts='' -n 0 -q` (pytest.ini forces -n 2 --dist loadscope; do NOT use -p no:xdist). TestRefresh is intentionally the LAST class because POST /api/refresh blanks meta.last_fetch/status and breaks provenance assertions in TestSources/TestSectorRotation/TestFpiDeals for ~25s; if you re-order it, wait before re-running. Live data at test time (2026-09-04): 7 sources all status=ok, latest NSDL date 2026-09-04, FPI streak = 2 days net selling (so 'streak_selling >= 1' triggers an alert; 'streak_selling >= 5' default does not), latest sector fortnight 16-31 Aug 2026 (22 mapped/unmapped rows, 16 with an NSE index), holdings 100/100 NIFTY 100 stocks latest_quarter 'Jun 2026', deals window 2026-08-24..2026-09-04 with 130 FPI-flagged rows of 1007. Frontend data-testid coverage is complete for all new components; nothing had to be added.",
+  "rca_of_the_issue": "No functional defect reproduced. The two initial pytest failures (provenance status 'refreshing' on /api/sectors/rotation and /api/deals/fpi) were caused by the in-suite POST /api/refresh test resetting source meta, not by the new features; fixed by ordering the refresh class last. Remaining findings are presentation-level: quarter labels reused as dates (fmtDate('Jun 2026') → '01 Jun 2026'), scatter label collision from an unclamped Y domain, and a mobile overflow from the fixed-width w-20 sparkline cell in the holdings table."
+}

@@ -4,7 +4,7 @@ export const fmtCr = (v, opts = {}) => {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
   const sign = opts.signed === false ? (v < 0 ? "−" : "") : v > 0 ? "+" : v < 0 ? "−" : "";
   const abs = Math.abs(v);
-  const digits = opts.digits ?? (abs >= 10000 ? 0 : abs >= 100 ? 0 : 1);
+  const digits = opts.digits ?? (abs >= 100 ? 0 : abs >= 10 ? 1 : 2);
   return `${sign}₹${abs.toLocaleString("en-IN", { maximumFractionDigits: digits, minimumFractionDigits: digits })} Cr`;
 };
 

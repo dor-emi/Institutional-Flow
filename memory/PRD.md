@@ -28,9 +28,15 @@ Build a web app that helps an investor understand where foreign institutional mo
 - Provenance chip on every panel; source health dots; methodology dialog; disclaimer banner; CSV exports
 - Tested end-to-end (iteration_1: 27/27 backend, all frontend flows pass)
 
+## Implemented (2026-09-04, iteration 2)
+- Sector Rotation Map tab: flow intensity (% of AUC) vs NSE sector index return per fortnight, trails over 1/3/6 fortnights, quadrant reads, exact/approx mapping flags (sector index history from NSE `indicesHistory`, chunked 90-day fetches; Yahoo sectoral data was stale so replaced)
+- Flow Alerts: browser-stored rules (streaks, z-score, 5D/20D sums, DII, VIX, NIFTY 5D, sector in/outflow), banner + header badge, manage dialog
+- Quarterly FII holdings (NIFTY 100 via Screener.in shareholding tables): top increases/decreases QoQ/YoY, run length, 8Q sparkline, search
+- Daily FPI bulk/block deals (NSE): name-heuristic FPI tagging, top 5 buys/sells per day, prominent partial-coverage caveat (per-stock FII trades are not publicly disclosed)
+- Tested: iteration_2 41/41 backend + frontend flows pass; cosmetic fixes applied
+
 ## Backlog
-- P1: Stock-level FII holding trends (quarterly shareholding pattern from NSE/BSE)
 - P1: FII derivatives positioning (NSE `fii_stats_*.xls` archives: index futures/options OI)
-- P2: Monthly/rolling sector rotation view; sector vs sectoral index returns
+- P2: Holdings universe expansion to NIFTY 200/500; per-stock detail drawer
 - P2: Debt/hybrid FPI flows panel; USD view
-- P2: Alerts on streak/z-score thresholds
+- P2: Server-side alert persistence / email notifications (requires login)

@@ -132,6 +132,9 @@ body {
     border: 1px solid var(--line);
     color: var(--txt-2);
     white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .buy {

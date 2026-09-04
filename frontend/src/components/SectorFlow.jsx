@@ -5,6 +5,7 @@ import { ProvenanceChip } from "./ProvenanceChip";
 import { ChartTooltip, Empty, Segmented, Stat } from "./Primitives";
 import { fmtCr, fmtAbs, fmtDate, fmtPct, shortDate, signClass, COLORS } from "@/lib/format";
 import { exportSectorsUrl } from "@/lib/api";
+import { SectorRotation } from "./SectorRotation";
 
 const WINDOWS = [
   { value: "net_equity_latest", label: "Latest FN" }, { value: "net_equity_3fn", label: "3 FN (~6W)" }, { value: "net_equity_6fn", label: "6 FN (~3M)" }, { value: "net_equity_all", label: "All loaded" },
@@ -103,7 +104,7 @@ const TrendLines = ({ sectors, fortnights }) => {
   );
 };
 
-export const SectorFlow = ({ data }) => {
+export const SectorFlow = ({ data, rotation }) => {
   const [tab, setTab] = useState("bar");
   const [metric, setMetric] = useState("net_equity_latest");
   const [heatMode, setHeatMode] = useState("abs");
@@ -133,7 +134,7 @@ export const SectorFlow = ({ data }) => {
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Segmented testPrefix="sector-flow-tab" value={tab} onChange={setTab} options={[{ value: "bar", label: "Ranked" }, { value: "heatmap", label: "Heatmap" }, { value: "trend", label: "Trend" }]} />
+        <Segmented testPrefix="sector-flow-tab" value={tab} onChange={setTab} options={[{ value: "bar", label: "Ranked" }, { value: "heatmap", label: "Heatmap" }, { value: "rotation", label: "Rotation map" }, { value: "trend", label: "Trend" }]} />
         <div className="flex items-center gap-2">
           {tab === "bar" && <Segmented testPrefix="sector-window" value={metric} onChange={setMetric} options={WINDOWS} />}
           {tab === "heatmap" && <Segmented testPrefix="sector-heat-mode" value={heatMode} onChange={setHeatMode} options={[{ value: "abs", label: "₹ Cr" }, { value: "intensity", label: "% of AUC" }]} />}
@@ -143,6 +144,7 @@ export const SectorFlow = ({ data }) => {
 
       {tab === "bar" && <RankedBars sectors={sectors} metric={metric} />}
       {tab === "heatmap" && <Heatmap sectors={sectors} fortnights={data.fortnights} mode={heatMode} />}
+      {tab === "rotation" && <SectorRotation data={rotation} />}
       {tab === "trend" && <TrendLines sectors={sectors} fortnights={data.fortnights} />}
 
       <ProvenanceChip id="sectors" p={data.provenance} />

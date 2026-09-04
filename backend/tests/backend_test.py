@@ -41,9 +41,9 @@ class TestSources:
         assert r.status_code == 200, r.text
         data = r.json()
         srcs = data["sources"]
-        assert len(srcs) == 4
+        assert len(srcs) == 7, [s["id"] for s in srcs]
         ids = {s["id"] for s in srcs}
-        assert ids == {"nsdl_daily", "nse_fiidii", "nsdl_sectors", "indices"}
+        assert ids == {"nsdl_daily", "nse_fiidii", "nsdl_sectors", "indices", "sector_indices", "deals", "holdings"}
         assert "server_time" in data
         for s in srcs:
             assert s["status"] == "ok", f"{s['id']} status={s['status']} err={s.get('error')}"
@@ -51,7 +51,7 @@ class TestSources:
             datetime.fromisoformat(s["last_fetch"])
             assert isinstance(s["records"], int) and s["records"] > 0, f"{s['id']} records={s['records']}"
             assert s["name"] and s["url"] and s["frequency"]
-            assert s["quality"] in ("verified", "provisional")
+            assert s["quality"] in ("verified", "provisional", "partial")
 
 
 # ---------------- /api/flows/daily ----------------
@@ -250,6 +250,179 @@ class TestExports:
         lines = [ln for ln in r.text.strip().splitlines() if ln]
         assert len(lines) > 15
         assert lines[0].startswith("sector,auc_equity_latest_cr,auc_weight_pct,net_")
+
+
+# ---------------- /api/sectors/rotation (NEW: Sector Rotation Map) ----------------
+EXACT_SECTORS = {"Information Technology", "Financial Services", "Healthcare", "Realty", "Chemicals",
+                 "Metals & Mining", "Consumer Durables", "Fast Moving Consumer Goods",
+                 "Automobile and Auto Components", "Oil, Gas & Consumable Fuels",
+                 "Media, Entertainment & Publication"}
+APPROX_SECTORS = {"Consumer Services", "Services", "Power", "Construction", "Capital Goods"}
+
+
+class TestSectorRotation:
+    @pytest.fixture(scope="class")
+    def rot(self, client):
+        r = get(client, "/sectors/rotation", periods=8)
+        assert r.status_code == 200, r.text[:300]
+        return r.json()
+
+    def test_fortnight_count_and_order(self, rot):
+        fns = rot["fortnights"]
+        assert len(fns) == 8, len(fns)
+        ends = [f["end"] for f in fns]
+        assert ends == sorted(ends), "fortnights not chronological"
+        for f in fns:
+            assert DATE_RE.match(f["start"]) and DATE_RE.match(f["end"])
+            assert f["start"] < f["end"]
+            assert len(f["rows"]) >= 20, len(f["rows"])
+
+    def test_rows_schema_and_types(self, rot):
+        for f in rot["fortnights"]:
+            for row in f["rows"]:
+                assert row["sector"] not in ("Grand Total", "Total", "Sovereign", "Others")
+                assert isinstance(row["net_equity"], (int, float))
+                assert isinstance(row["flow_intensity_pct"], (int, float))
+                assert -100 < row["flow_intensity_pct"] < 100
+                assert row["match"] in ("exact", "approx", None)
+                if row["match"] is None:
+                    assert row["index_name"] is None
+                    assert row["index_return_pct"] is None
+                else:
+                    assert row["index_name"]
+
+    def test_mapped_sectors_have_numeric_returns(self, rot):
+        latest = rot["fortnights"][-1]["rows"]
+        by_sector = {r["sector"]: r for r in latest}
+        for name in ("Information Technology", "Financial Services"):
+            row = by_sector[name]
+            assert row["match"] == "exact", row
+            assert isinstance(row["index_return_pct"], (int, float)), row
+            assert -50 < row["index_return_pct"] < 50
+        assert by_sector["Textiles"]["index_return_pct"] is None
+        assert by_sector["Textiles"]["match"] is None
+        for name in APPROX_SECTORS & set(by_sector):
+            assert by_sector[name]["match"] == "approx"
+
+    def test_mapping_object(self, rot):
+        mp = rot["mapping"]
+        assert len(mp) >= 16, len(mp)
+        for sec, v in mp.items():
+            assert v["index"] and v["match"] in ("exact", "approx")
+        for sec in EXACT_SECTORS:
+            assert mp[sec]["match"] == "exact", sec
+        for sec in APPROX_SECTORS:
+            assert mp[sec]["match"] == "approx", sec
+
+    def test_provenance(self, rot):
+        p = rot["provenance"]
+        assert p["flows"]["id"] == "nsdl_sectors"
+        assert p["flows"]["status"] == "ok", p["flows"].get("error")
+        idx = p["index"]
+        assert idx["id"] == "sector_indices"
+        assert idx["status"] == "ok", idx.get("error")
+        assert DATE_RE.match(idx["data_date"] or "")
+        assert idx["url"] and idx["quality"] == "partial"
+
+    def test_periods_validation(self, client):
+        assert get(client, "/sectors/rotation", periods=1).status_code == 422
+        assert get(client, "/sectors/rotation", periods=25).status_code == 422
+        r = get(client, "/sectors/rotation", periods=3)
+        assert r.status_code == 200 and len(r.json()["fortnights"]) == 3
+
+
+# ---------------- /api/holdings (NEW: stock-level FII shareholding) ----------------
+class TestHoldings:
+    @pytest.fixture(scope="class")
+    def hold(self, client):
+        r = get(client, "/holdings")
+        assert r.status_code == 200, r.text[:300]
+        return r.json()
+
+    def test_top_level(self, hold):
+        assert hold["universe"] == "NIFTY 100"
+        assert hold["count"] >= 95, hold["count"]
+        assert hold["count"] == len(hold["stocks"])
+        assert re.match(r"^[A-Z][a-z]{2} \d{4}$", hold["latest_quarter"] or ""), hold["latest_quarter"]
+        assert hold["status"] == "ok", hold["status"]
+
+    def test_stock_schema(self, hold):
+        for s in hold["stocks"]:
+            assert s["symbol"] and isinstance(s["symbol"], str)
+            assert s["name"] and s["industry"]
+            assert isinstance(s["fii_pct"], (int, float)) and 0 <= s["fii_pct"] <= 100
+            assert isinstance(s["fii_prev_pct"], (int, float))
+            assert isinstance(s["change_qoq_pp"], (int, float))
+            assert s["change_yoy_pp"] is None or isinstance(s["change_yoy_pp"], (int, float))
+            assert isinstance(s["consecutive_quarters"], int)
+            assert 2 <= len(s["quarters"]) <= 8, s["symbol"]
+            assert 2 <= len(s["fii_series"]) <= 8
+            assert len(s["quarters"]) == len(s["fii_series"])
+            assert str(s["source_url"]).startswith("https://www.screener.in/")
+            assert abs(round(s["fii_pct"] - s["fii_prev_pct"], 2) - s["change_qoq_pp"]) < 0.011
+
+    def test_sorted_by_qoq_desc(self, hold):
+        vals = [s["change_qoq_pp"] for s in hold["stocks"]]
+        assert vals == sorted(vals, reverse=True)
+        assert vals[0] > 0 and vals[-1] < 0, (vals[0], vals[-1])
+
+    def test_no_mongo_id_and_provenance(self, hold):
+        assert all("_id" not in s for s in hold["stocks"])
+        p = hold["provenance"]
+        assert p["id"] == "holdings" and p["status"] == "ok"
+        assert p["data_date"] == hold["latest_quarter"]
+        assert p["url"] and p["quality"] == "verified"
+
+
+# ---------------- /api/deals/fpi (NEW: daily FPI bulk/block deals) ----------------
+class TestFpiDeals:
+    @pytest.fixture(scope="class")
+    def deals(self, client):
+        r = get(client, "/deals/fpi", days=10)
+        assert r.status_code == 200, r.text[:300]
+        return r.json()
+
+    def test_days_and_ordering(self, deals):
+        days = deals["days"]
+        assert len(days) >= 5, len(days)
+        dates = [d["date"] for d in days]
+        assert dates == sorted(dates, reverse=True), "days not newest-first"
+        assert all(DATE_RE.match(d) for d in dates)
+        cov = deals["dates_covered"]
+        assert cov == sorted(cov) and len(cov) <= 10
+        assert set(dates) <= set(cov)
+
+    def test_items_schema(self, deals):
+        seen = 0
+        for day in deals["days"]:
+            assert len(day["top_buys"]) <= 5 and len(day["top_sells"]) <= 5
+            for side in ("top_buys", "top_sells"):
+                vals = [i["value_cr"] for i in day[side]]
+                assert vals == sorted(vals, reverse=True), f"{day['date']} {side} not sorted"
+                for it in day[side]:
+                    seen += 1
+                    assert it["symbol"] and it["name"] is not None
+                    assert isinstance(it["value_cr"], (int, float)) and it["value_cr"] >= 0
+                    assert isinstance(it["qty"], (int, float)) and it["qty"] > 0
+                    assert isinstance(it["clients"], list) and len(it["clients"]) >= 1
+                    assert isinstance(it["kinds"], list) and set(it["kinds"]) <= {"bulk", "block"}
+            assert day["buy_count"] >= len(day["top_buys"])
+            assert day["sell_count"] >= len(day["top_sells"])
+        assert seen > 5, f"only {seen} deal items across all days"
+
+    def test_counts_and_provenance(self, deals):
+        assert 0 < deals["fpi_deal_rows"] <= deals["all_deal_rows"]
+        p = deals["provenance"]
+        assert p["id"] == "deals" and p["status"] == "ok"
+        assert p["quality"] == "partial"
+        assert DATE_RE.match(p["data_date"] or "")
+
+    def test_days_param(self, client):
+        assert get(client, "/deals/fpi", days=0).status_code == 422
+        assert get(client, "/deals/fpi", days=31).status_code == 422
+        r = get(client, "/deals/fpi", days=3)
+        assert r.status_code == 200
+        assert len(r.json()["dates_covered"]) <= 3
 
 
 # ---------------- refresh ----------------

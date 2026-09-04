@@ -2,11 +2,11 @@ import asyncio
 import logging
 from datetime import datetime, timezone, date, timedelta
 
-from . import nsdl, nse, market
+from . import nsdl, nse, market, holdings, deals
 
 log = logging.getLogger("store")
 
-TTL = {"nse_fiidii": 30 * 60, "nsdl_daily": 3 * 3600, "nsdl_sectors": 12 * 3600, "indices": 3600}
+TTL = {"nse_fiidii": 30 * 60, "nsdl_daily": 3 * 3600, "nsdl_sectors": 12 * 3600, "indices": 3600, "sector_indices": 6 * 3600, "holdings": 24 * 3600, "deals": 3600}
 _locks = {}
 
 
@@ -149,13 +149,97 @@ async def refresh_indices(db):
     return n
 
 
+async def refresh_sector_indices(db):
+    n = 0
+    today = date.today()
+    for key, meta in market.SECTOR_INDICES.items():
+        existing = await db.index_prices.find_one({"_id": key}, {"series": 1})
+        old = (existing or {}).get("series") or []
+        start = today - timedelta(days=400)
+        if len(old) > 150:
+            start = date.fromisoformat(old[-1]["date"]) - timedelta(days=7)
+        try:
+            new = await asyncio.to_thread(market.fetch_nse_index_history, meta["nse"], start, today)
+        except Exception as e:
+            log.warning("sector index %s failed: %s", key, e)
+            continue
+        if not new:
+            continue
+        merged = {x["date"]: x for x in old}
+        merged.update({x["date"]: x for x in new})
+        series = [merged[d] for d in sorted(merged)]
+        await db.index_prices.update_one({"_id": key}, {"$set": {"key": key, "name": meta["name"], "symbol": meta["nse"], "series": series, "fetched_at": now_iso()}}, upsert=True)
+        n += len(series)
+    return n
+
+
+async def refresh_deals(db, history_days=15):
+    n = 0
+    rows = await asyncio.to_thread(deals.fetch_snapshot)
+    for r in rows:
+        r["fetched_at"] = now_iso()
+        await db.large_deals.update_one({"_id": r["_id"]}, {"$set": r}, upsert=True)
+        n += 1
+    for day in deals.recent_weekdays(history_days)[1:]:
+        if await db.large_deals.count_documents({"date": day.isoformat()}) > 0:
+            continue
+        try:
+            rows = await asyncio.to_thread(deals.fetch_history_day, day)
+        except Exception as e:
+            log.warning("deals %s failed: %s", day, e)
+            continue
+        for r in rows:
+            r["fetched_at"] = now_iso()
+            await db.large_deals.update_one({"_id": r["_id"]}, {"$set": r}, upsert=True)
+            n += 1
+        await asyncio.sleep(0.4)
+    return n
+
+
+async def refresh_holdings(db):
+    universe = await asyncio.to_thread(holdings.fetch_universe)
+    n = 0
+    pending = list(universe)
+    for attempt in range(2):
+        failed = []
+        for i, u in enumerate(pending):
+            existing = await db.holdings.find_one({"_id": u["symbol"]}, {"fetched_at": 1})
+            if existing and existing.get("fetched_at"):
+                age = (datetime.now(timezone.utc) - datetime.fromisoformat(existing["fetched_at"])).total_seconds()
+                if age < TTL["holdings"]:
+                    n += 1
+                    continue
+            try:
+                data = await asyncio.to_thread(holdings.fetch_shareholding, u["symbol"])
+            except Exception as e:
+                log.warning("holdings %s failed: %s", u["symbol"], e)
+                data = None
+            if data:
+                await db.holdings.update_one({"_id": u["symbol"]}, {"$set": {**u, **data, "fetched_at": now_iso()}}, upsert=True)
+                n += 1
+            else:
+                failed.append(u)
+            await set_meta(db, "holdings", progress=f"{i + 1}/{len(pending)}" + (" (retry)" if attempt else ""))
+            await asyncio.sleep(0.6 + attempt * 1.5)
+        if not failed:
+            break
+        pending = failed
+        await asyncio.sleep(20)
+    return n
+
+
 REFRESHERS = {
     "nse_fiidii": refresh_nse,
     "nsdl_daily": refresh_nsdl_daily,
     "nsdl_sectors": refresh_sectors,
     "indices": refresh_indices,
+    "sector_indices": refresh_sector_indices,
+    "deals": refresh_deals,
+    "holdings": refresh_holdings,
 }
 
 
 async def warmup(db):
-    await asyncio.gather(*[ensure_fresh(db, k, background=False) for k in REFRESHERS])
+    fast = [k for k in REFRESHERS if k != "holdings"]
+    await asyncio.gather(*[ensure_fresh(db, k, background=False) for k in fast])
+    await ensure_fresh(db, "holdings", background=False)

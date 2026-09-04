@@ -7,7 +7,7 @@ import { MethodologyDialog } from "./MethodologyDialog";
 
 const dot = (s) => (s === "ok" ? "bg-emerald-400" : s === "error" ? "bg-red-400" : "bg-amber-400 pulse-dot");
 
-export const Header = ({ onRefreshed }) => {
+export const Header = ({ onRefreshed, alertsSlot }) => {
   const [sources, setSources] = useState([]);
   const [busy, setBusy] = useState(false);
 
@@ -52,6 +52,7 @@ export const Header = ({ onRefreshed }) => {
           ))}
           <span className="text-[10px] font-mono text-slate-600 border-l border-[color:var(--line)] pl-3">upd {fmtTime(lastOk)}</span>
         </div>
+        {alertsSlot}
         <MethodologyDialog trigger={<button data-testid="methodology-dialog-trigger" className="seg-btn border-[color:var(--line)] flex items-center gap-1.5"><BookOpen size={12} /> Methodology</button>} />
         <button data-testid="refresh-all-button" onClick={refresh} disabled={busy} className="seg-btn border-[color:var(--line)] flex items-center gap-1.5 disabled:opacity-50">
           <RefreshCw size={12} className={busy ? "animate-spin" : ""} /> Refresh

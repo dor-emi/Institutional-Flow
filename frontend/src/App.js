@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster } from "sonner";
-import { Info } from "lucide-react";
+import { Info, Bell } from "lucide-react";
 import "@/App.css";
 import { Header } from "@/components/Header";
 import { Panel } from "@/components/Primitives";
@@ -9,7 +9,10 @@ import { LiquidityPulse } from "@/components/LiquidityPulse";
 import { SectorFlow } from "@/components/SectorFlow";
 import { DailyFlowChart } from "@/components/DailyFlowChart";
 import { CompareChart } from "@/components/CompareChart";
-import { getCompare, getDaily, getIndices, getSectors, getStats } from "@/lib/api";
+import { HoldingsPanel } from "@/components/HoldingsPanel";
+import { DealsPanel } from "@/components/DealsPanel";
+import { AlertsBanner, AlertsDialog, evaluate, useAlertRules } from "@/components/Alerts";
+import { getCompare, getDaily, getFpiDeals, getHoldings, getIndices, getRotation, getSectors, getStats } from "@/lib/api";
 
 const usePoll = (fn, deps, { until }) => {
   const [data, setData] = useState(null);
@@ -33,19 +36,26 @@ export default function App() {
   const [sectors, r3] = usePoll(() => getSectors(12), [], { until: (d) => d.sectors.length > 0 && d.fortnights.length >= 6 });
   const [daily, r4] = usePoll(() => getDaily(range), [range], { until: (d) => d.series.length > 20 });
   const [compare, r5] = usePoll(() => getCompare(index, range), [index, range], { until: (d) => d.series.length > 20 });
+  const [rotation, r6] = usePoll(() => getRotation(8), [], { until: (d) => d.fortnights.length >= 6 && d.fortnights.some((f) => f.rows.some((r) => r.index_return_pct != null)) });
+  const [holdings, r7] = usePoll(getHoldings, [], { until: (d) => d.count > 0 && d.status !== "refreshing" });
+  const [deals, r8] = usePoll(() => getFpiDeals(10), [], { until: (d) => d.days.length >= 5 });
+  const [rules, setRules] = useAlertRules();
+  const triggered = useMemo(() => evaluate(rules, { stats, indices, sectors }), [rules, stats, indices, sectors]);
 
-  const refreshAll = () => [r1, r2, r3, r4, r5].forEach((f) => f());
+  const refreshAll = () => [r1, r2, r3, r4, r5, r6, r7, r8].forEach((f) => f());
 
   return (
     <div className="App">
       <Toaster theme="dark" position="bottom-right" />
       <main className="max-w-[1600px] mx-auto p-4 md:p-6 lg:p-8 space-y-6">
-        <Header onRefreshed={refreshAll} />
+        <Header onRefreshed={refreshAll} alertsSlot={<AlertsDialog rules={rules} setRules={setRules} triggered={triggered} trigger={<button data-testid="alerts-dialog-trigger" className={`seg-btn border-[color:var(--line)] flex items-center gap-1.5 ${triggered.length ? "text-red-300 border-red-500/40" : ""}`}><Bell size={12} /> Alerts{triggered.length ? ` (${triggered.length})` : ""}</button>} />} />
 
         <div data-testid="disclaimer-banner" className="rise flex items-start gap-3 rounded-md border border-amber-500/25 bg-amber-500/[0.06] px-4 py-3 text-xs text-amber-200/90 leading-relaxed">
           <Info size={14} className="mt-0.5 shrink-0" />
           <span>This dashboard describes <b>past</b> institutional positioning from public NSDL/NSE filings. FII/FPI buying or selling is not a forecast of index or stock direction, and nothing here is a recommendation. Every figure carries its source, data date, fetch time, frequency and quality tag.</span>
         </div>
+
+        <AlertsBanner triggered={triggered} count={rules.length} />
 
         <div className="rise" style={{ animationDelay: "60ms" }}>
           <Panel testId="panel-indices" title="Market context" subtitle="EOD index levels with 60-session sparklines. Returns shown alongside flows so you can compare, not infer.">
@@ -60,8 +70,20 @@ export default function App() {
         </div>
 
         <div className="rise" style={{ animationDelay: "180ms" }}>
-          <Panel testId="panel-sectors" title="Where is FPI money going? — Sector flows" subtitle="NSDL fortnightly net FPI equity investment by BSE industry sector, with Assets Under Custody for scale. Ranked, heat-mapped and trended across the last 12 fortnights.">
-            <SectorFlow data={sectors} />
+          <Panel testId="panel-sectors" title="Where is FPI money going? — Sector flows" subtitle="NSDL fortnightly net FPI equity investment by BSE industry sector, with Assets Under Custody for scale. Ranked, heat-mapped, mapped against sector index returns (rotation) and trended across the last 12 fortnights.">
+            <SectorFlow data={sectors} rotation={rotation} />
+          </Panel>
+        </div>
+
+        <div className="rise" style={{ animationDelay: "210ms" }}>
+          <Panel testId="panel-holdings" title="Which stocks are foreign funds adding or trimming? — Quarterly FII holdings" subtitle="FII % of equity from exchange shareholding filings for NIFTY 100 constituents; ranked by change in percentage points.">
+            <HoldingsPanel data={holdings} />
+          </Panel>
+        </div>
+
+        <div className="rise" style={{ animationDelay: "230ms" }}>
+          <Panel testId="panel-deals" title="Daily FPI bulk & block deals — disclosed counterparties" subtitle="The only per-stock, per-day foreign trades that are publicly disclosed. Partial coverage by definition.">
+            <DealsPanel data={deals} />
           </Panel>
         </div>
 
