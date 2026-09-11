@@ -89,7 +89,7 @@
     "react-router": "7.15.1",
     "node-forge": "1.4.0",
     "fast-uri": "3.1.0",
-    "flatted": "3.4.0",
+    "flatted": "3.4.2",
     "qs": "6.15.2",
     "diff": "4.0.4",
     "follow-redirects": "1.16.0",
