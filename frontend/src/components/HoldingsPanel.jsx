@@ -46,7 +46,7 @@ const Table = ({ rows, metric, testId, title, cls }) => (
 export const HoldingsPanel = ({ data }) => {
   const [metric, setMetric] = useState("change_qoq_pp");
   const [q, setQ] = useState("");
-  const stocks = data?.stocks || [];
+  const stocks = useMemo(() => data?.stocks || [], [data?.stocks]);
   const sorted = useMemo(() => [...stocks].filter((s) => s[metric] != null).sort((a, b) => b[metric] - a[metric]), [stocks, metric]);
   const found = useMemo(() => (q ? stocks.filter((s) => (s.symbol + " " + s.name).toLowerCase().includes(q.toLowerCase())).slice(0, 8) : []), [stocks, q]);
   if (!data || !stocks.length) return <Empty testId="holdings-loading" label={`Loading NIFTY 100 shareholding filings… ${data?.progress || ""}`} />;
