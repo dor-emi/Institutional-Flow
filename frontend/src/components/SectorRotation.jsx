@@ -38,7 +38,7 @@ const RotTooltip = ({ active, payload }) => {
 export const SectorRotation = ({ data }) => {
   const [trail, setTrail] = useState(3);
   const [fnIdx, setFnIdx] = useState(null);
-  const fns = data?.fortnights || [];
+  const fns = useMemo(() => data?.fortnights || [], [data?.fortnights]);
   const sel = fnIdx ?? fns.length - 1;
 
   const series = useMemo(() => {
