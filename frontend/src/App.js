@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster } from "sonner";
-import { Info, Bell } from "lucide-react";
+import { Bell } from "lucide-react";
 import "@/App.css";
 import { Header } from "@/components/Header";
 import { Panel } from "@/components/Primitives";
@@ -11,7 +11,7 @@ import { DailyFlowChart } from "@/components/DailyFlowChart";
 import { CompareChart } from "@/components/CompareChart";
 import { HoldingsPanel } from "@/components/HoldingsPanel";
 import { DealsPanel } from "@/components/DealsPanel";
-import { AlertsBanner, AlertsDialog, evaluate, useAlertRules } from "@/components/Alerts";
+import { AlertsDialog, evaluate, useAlertRules } from "@/components/Alerts";
 import { getCompare, getDaily, getFpiDeals, getHoldings, getIndices, getRotation, getSectors, getStats } from "@/lib/api";
 
 const usePoll = (fn, deps, { until }) => {
@@ -49,13 +49,6 @@ export default function App() {
       <Toaster theme="dark" position="bottom-right" />
       <main className="max-w-[1600px] mx-auto p-4 md:p-6 lg:p-8 space-y-6">
         <Header onRefreshed={refreshAll} alertsSlot={<AlertsDialog rules={rules} setRules={setRules} triggered={triggered} trigger={<button data-testid="alerts-dialog-trigger" className={`seg-btn border-[color:var(--line)] flex items-center gap-1.5 ${triggered.length ? "text-red-300 border-red-500/40" : ""}`}><Bell size={12} /> Alerts{triggered.length ? ` (${triggered.length})` : ""}</button>} />} />
-
-        <div data-testid="disclaimer-banner" className="rise flex items-start gap-3 rounded-md border border-amber-500/25 bg-amber-500/[0.06] px-4 py-3 text-xs text-amber-200/90 leading-relaxed">
-          <Info size={14} className="mt-0.5 shrink-0" />
-          <span>This dashboard describes <b>past</b> institutional positioning from public NSDL/NSE filings. FII/FPI buying or selling is not a forecast of index or stock direction, and nothing here is a recommendation. Every figure carries its source, data date, fetch time, frequency and quality tag.</span>
-        </div>
-
-        <AlertsBanner triggered={triggered} count={rules.length} />
 
         <div className="rise" style={{ animationDelay: "60ms" }}>
           <Panel testId="panel-indices" title="Market context" subtitle="EOD index levels with 60-session sparklines. Returns shown alongside flows so you can compare, not infer.">
