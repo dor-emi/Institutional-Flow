@@ -1,3 +1,5 @@
+import { Info } from "lucide-react";
+
 export const Panel = ({ title, subtitle, right, children, testId, className = "", accent }) => (
   <section data-testid={testId} className={`panel grain p-4 md:p-5 flex flex-col gap-4 min-w-0 ${className}`}>
     {(title || right) && (
@@ -12,6 +14,15 @@ export const Panel = ({ title, subtitle, right, children, testId, className = ""
     )}
     {children}
   </section>
+);
+
+export const InfoTip = ({ children }) => (
+  <span className="relative inline-flex items-center align-middle group ml-1 cursor-help" tabIndex="0">
+    <Info size={11} className="text-slate-500 group-hover:text-slate-300 group-focus:text-slate-300" />
+    <span className="pointer-events-none absolute z-50 left-1/2 bottom-full mb-2 hidden w-64 -translate-x-1/2 rounded-md border border-[color:var(--line-hi)] bg-[#0b0f17] px-3 py-2 text-[10px] leading-relaxed text-slate-300 shadow-xl group-hover:block group-focus:block">
+      {children}
+    </span>
+  </span>
 );
 
 export const Segmented = ({ options, value, onChange, testPrefix }) => (
@@ -52,9 +63,9 @@ export const ChartTooltip = ({ active, payload, label, rows }) => {
   );
 };
 
-export const Stat = ({ label, value, sub, cls = "", testId }) => (
+export const Stat = ({ label, value, sub, cls = "", testId, info }) => (
   <div data-testid={testId} className="flex flex-col gap-1 rounded-md border border-[color:var(--line)] bg-[color:var(--void)]/40 px-3 py-2.5">
-    <span className="overline-label">{label}</span>
+    <span className="overline-label">{label}{info && <InfoTip>{info}</InfoTip>}</span>
     <span className={`font-mono text-lg md:text-xl font-semibold tracking-tight ${cls}`}>{value}</span>
     {sub && <span className="text-[11px] text-slate-500 leading-snug">{sub}</span>}
   </div>
