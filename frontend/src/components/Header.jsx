@@ -1,10 +1,11 @@
+import { useState } from "react";
 import { Activity, RefreshCw, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { postRefresh } from "@/lib/api";
 import { MethodologyDialog } from "./MethodologyDialog";
 
 export const Header = ({ onRefreshed, alertsSlot }) => {
-  const [busy, setBusy] = React.useState(false);
+  const [busy, setBusy] = useState(false);
 
   const refresh = async () => {
     setBusy(true);
