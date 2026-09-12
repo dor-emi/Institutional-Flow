@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis, LineChart, Line, Legend } from "recharts";
 import { Download } from "lucide-react";
-import { Empty, Segmented, Stat } from "./Primitives";
+import { Empty, Segmented, Stat, ChartTooltip } from "./Primitives";
 import { fmtCr, fmtAbs, fmtDate, fmtPct, shortDate, signClass, COLORS } from "@/lib/format";
 import { exportSectorsUrl } from "@/lib/api";
 import { SectorRotation } from "./SectorRotation";
@@ -38,7 +38,7 @@ const RankedBars = ({ sectors, metric }) => {
 };
 
 const Heatmap = ({ sectors, fortnights, mode }) => {
-  const vals = sectors.flatMap((s) => s.history.map((h) => (mode === "intensity" ? (h.net_equity != null && h.auc_equity ? (h.net_equity / h.auc_equity) * 100 : null) : h.net_equity));
+  const vals = sectors.flatMap((s) => s.history.map((h) => (mode === "intensity" ? (h.net_equity != null && h.auc_equity ? (h.net_equity / h.auc_equity) * 100 : null) : h.net_equity)));
   const max = Math.max(...vals.filter((v) => v != null).map(Math.abs), 1);
   const ordered = [...sectors].sort((a, b) => (b.auc_equity || 0) - (a.auc_equity || 0));
   return (
